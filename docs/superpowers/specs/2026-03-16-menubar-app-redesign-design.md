@@ -148,7 +148,7 @@ At runtime, `KnockEngine` resolves a `SlotConfiguration` to an `ActionPreset` by
 | `brightness-down` | Brightness Down | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 145"]` |
 | `volume-up` | Volume Up | `/usr/bin/osascript` | `["-e", "set volume output volume ((output volume of (get volume settings)) + 10)"]` |
 | `volume-down` | Volume Down | `/usr/bin/osascript` | `["-e", "set volume output volume ((output volume of (get volume settings)) - 10)"]` |
-| `screenshot` | Screenshot | `/usr/bin/screencapture` | `["-i", "~/Desktop/screenshot.png"]` |
+| `screenshot` | Screenshot | `/usr/bin/screencapture` | `["-i", "<Desktop>/screenshot.png"]` — `PresetLibrary` must expand `<Desktop>` to the user's actual Desktop path at construction time using `FileManager.default.homeDirectoryForCurrentUser.appending(path: "Desktop/screenshot.png")`. `~` cannot be used because `Process` does not invoke a shell. |
 | `media-play-pause` | Play / Pause | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 101"]` |
 | `media-next` | Next Track | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 111"]` |
 | `media-previous` | Previous Track | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 100"]` |
@@ -234,6 +234,8 @@ Each step shows:
 **Value clamping:** All computed values are clamped to valid slider ranges before being applied: threshold to [0.03, 0.60], grouping window to [0.20, 0.70] seconds, cooldown to [0.05, 0.30] seconds.
 
 **Implementation note:** During calibration, the wizard sets `MotionMonitor.overrideThreshold = 0.03` to capture all taps regardless of the user's current threshold setting. This is a new optional property on `MotionMonitor` — when non-nil, it overrides `settingsStore.settings.detectionThreshold` in the `KnockDetector.process()` call. The wizard resets it to `nil` on completion or cancellation. The existing `KnockDetector` pattern recognition is NOT used during steps 1–3; the wizard performs its own peak detection on `snapshot.filteredMagnitude`.
+
+**Concurrency note:** `MotionMonitor` is `@MainActor`-isolated, but the `onSample` HID callback runs off the main actor. To avoid a Swift 6 data race, the `onSample` closure must capture the resolved threshold as a local constant — `let threshold = self.overrideThreshold ?? settings.detectionThreshold` — before calling `detector.process()`. This follows the existing pattern where `settings` is already captured as a local on each callback invocation.
 
 **Step 4: Test & Confirm**
 
