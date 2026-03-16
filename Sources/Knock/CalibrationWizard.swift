@@ -43,7 +43,7 @@ struct CalibrationWizard: View {
             Divider()
             footerButtons
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 580)
         .background(Theme.panel)
         .foregroundStyle(Theme.primaryText)
         .onAppear { beginCalibration() }
@@ -138,6 +138,11 @@ struct CalibrationWizard: View {
                 .font(.headline)
             Spacer()
         }
+        .onReceive(motionMonitor.$latestEvent.compactMap { $0 }) { event in
+            if step == 4 {
+                lastRecognizedPattern = event.pattern.title
+            }
+        }
     }
 
     private func calibrationRow(_ title: String, value: String) -> some View {
@@ -161,6 +166,7 @@ struct CalibrationWizard: View {
             }
             Spacer()
             if step == 4 {
+                Button("Close") { dismiss() }
                 Button("Save") { saveAndDismiss() }
                     .keyboardShortcut(.defaultAction)
             } else {
@@ -215,10 +221,6 @@ struct CalibrationWizard: View {
                 settings.cooldown = computed.cooldown
             }
             motionMonitor.overrideThreshold = nil
-            // Listen for pattern recognition during test
-            collector.startTestObserving(motionMonitor: motionMonitor) { pattern in
-                lastRecognizedPattern = pattern
-            }
         } else {
             collector.startObserving(motionMonitor: motionMonitor, step: step)
         }
