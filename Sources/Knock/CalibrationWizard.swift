@@ -276,7 +276,7 @@ private final class CalibrationCollector: Observable {
         currentStep = step
         pendingPeaks = []
         cancellable = motionMonitor.$snapshot
-            .sink { [weak self] snapshot in
+            .sink { @MainActor [weak self] snapshot in
                 self?.processSample(snapshot)
             }
     }
@@ -284,7 +284,7 @@ private final class CalibrationCollector: Observable {
     func startTestObserving(motionMonitor: MotionMonitor, onPattern: @escaping @MainActor (String) -> Void) {
         cancellable = motionMonitor.$latestEvent
             .compactMap { $0 }
-            .sink { event in
+            .sink { @MainActor event in
                 onPattern(event.pattern.title)
             }
     }

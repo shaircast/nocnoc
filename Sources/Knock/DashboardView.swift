@@ -59,6 +59,7 @@ struct DashboardView: View {
                 }
             }
         }
+        .disabled(showingCalibration)
     }
 
     // MARK: - Waveform
