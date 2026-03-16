@@ -89,7 +89,7 @@ enum PresetLibrary {
             category: .system,
             template: .fixed(
                 executable: "/usr/bin/osascript",
-                arguments: ["-e", "tell application \"System Events\" to keystroke \"q\" using {control down, command down}"]
+                arguments: ["-e", "tell app \"System Events\" to keystroke \"q\" using {control down, command down}"]
             )
         ),
         ActionPreset(
