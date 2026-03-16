@@ -2,14 +2,28 @@ import AppKit
 import SwiftUI
 
 struct MenuBarView: View {
+    @EnvironmentObject private var appModel: AppModel
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
+    @EnvironmentObject private var updateChecker: UpdateChecker
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("nocnoc")
                 .font(.title2.weight(.bold))
+
+            if case let .available(version, url) = updateChecker.status {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label("Update available: v\(version)", systemImage: "arrow.down.circle")
+                        .font(.caption)
+                        .foregroundStyle(Theme.info)
+                }
+                .buttonStyle(.plainHandCursor)
+            }
 
             Text(engine.lastActionSummary)
                 .foregroundStyle(Theme.secondaryText)
@@ -35,16 +49,28 @@ struct MenuBarView: View {
             Button(engine.isMonitoring ? "Pause Monitoring" : "Resume Monitoring") {
                 engine.toggleMonitoring()
             }
+            .buttonStyle(.plainHandCursor)
 
             Button("Open nocnoc") {
-                engine.openMainWindow()
+                if appModel.mainWindow == nil {
+                    openWindow(id: "main")
+                    DispatchQueue.main.async {
+                        appModel.activateMainWindow()
+                    }
+                } else {
+                    appModel.activateMainWindow()
+                }
             }
+            .buttonStyle(.plainHandCursor)
 
             Divider()
 
             Button("Quit") {
-                NSApplication.shared.terminate(nil)
+                DispatchQueue.main.async {
+                    NSApplication.shared.terminate(nil)
+                }
             }
+            .buttonStyle(.plainHandCursor)
         }
         .padding(16)
         .background(Theme.panel)

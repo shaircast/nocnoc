@@ -89,15 +89,7 @@ enum PresetLibrary {
             category: .system,
             template: .fixed(
                 executable: "/usr/bin/osascript",
-                arguments: ["-e", "tell app \"System Events\" to keystroke \"q\" using {control down, command down}"]
-            )
-        ),
-        ActionPreset(
-            id: "toggle-dnd", name: "Do Not Disturb", icon: "moon",
-            category: .system,
-            template: .fixed(
-                executable: "/usr/bin/shortcuts",
-                arguments: ["run", "Toggle Do Not Disturb"]
+                arguments: ["-e", "tell application \"System Events\" to key code 12 using {command down, control down}"]
             )
         ),
         ActionPreset(
@@ -130,42 +122,6 @@ enum PresetLibrary {
             template: .fixed(
                 executable: "/usr/bin/osascript",
                 arguments: ["-e", "set volume output volume ((output volume of (get volume settings)) - 10)"]
-            )
-        ),
-        ActionPreset(
-            id: "screenshot", name: "Screenshot", icon: "camera.viewfinder",
-            category: .system,
-            template: .fixed(
-                executable: "/usr/bin/screencapture",
-                arguments: [
-                    "-i",
-                    FileManager.default.homeDirectoryForCurrentUser
-                        .appending(path: "Desktop/screenshot.png").path(percentEncoded: false),
-                ]
-            )
-        ),
-        ActionPreset(
-            id: "media-play-pause", name: "Play / Pause", icon: "playpause",
-            category: .system,
-            template: .fixed(
-                executable: "/usr/bin/osascript",
-                arguments: ["-e", "tell application \"System Events\" to key code 101"]
-            )
-        ),
-        ActionPreset(
-            id: "media-next", name: "Next Track", icon: "forward",
-            category: .system,
-            template: .fixed(
-                executable: "/usr/bin/osascript",
-                arguments: ["-e", "tell application \"System Events\" to key code 111"]
-            )
-        ),
-        ActionPreset(
-            id: "media-previous", name: "Previous Track", icon: "backward",
-            category: .system,
-            template: .fixed(
-                executable: "/usr/bin/osascript",
-                arguments: ["-e", "tell application \"System Events\" to key code 100"]
             )
         ),
     ]

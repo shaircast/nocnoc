@@ -10,7 +10,7 @@ struct WaveformView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color(red: 0.16, green: 0.18, blue: 0.21), Color(red: 0.08, green: 0.10, blue: 0.12)],
+                            colors: [Color(hex: 0x0D0F11), Color(hex: 0x060808)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -45,7 +45,7 @@ struct WaveformView: View {
 
                     context.addFilter(.shadow(color: Theme.accent.opacity(0.55), radius: 6))
                     context.stroke(waveformPath, with: .linearGradient(
-                        Gradient(colors: [Theme.accent, Color(red: 0.37, green: 0.78, blue: 0.69), .white]),
+                        Gradient(colors: [Color(hex: 0x39FF14), Color(hex: 0x7FFF6B), Color(hex: 0xCCFFCC)]),
                         startPoint: CGPoint(x: 0, y: size.height),
                         endPoint: CGPoint(x: size.width, y: 0)
                     ), lineWidth: 2)

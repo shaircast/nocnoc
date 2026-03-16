@@ -4,6 +4,7 @@ import SwiftUI
 struct CalibrationWizard: View {
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
+    @EnvironmentObject private var engine: KnockEngine
     @Environment(\.dismiss) private var dismiss
 
     @State private var step = 1
@@ -43,7 +44,7 @@ struct CalibrationWizard: View {
             Divider()
             footerButtons
         }
-        .frame(width: 520, height: 580)
+        .frame(width: 520, height: step == 4 ? 660 : 580)
         .background(Theme.panel)
         .foregroundStyle(Theme.primaryText)
         .onAppear { beginCalibration() }
@@ -190,12 +191,14 @@ struct CalibrationWizard: View {
     }
 
     private func beginCalibration() {
+        engine.suppressActions = true
         settingsBeforeCalibration = settingsStore.settings
         motionMonitor.overrideThreshold = 0.03
         collector.startObserving(motionMonitor: motionMonitor, step: step)
     }
 
     private func endCalibration() {
+        engine.suppressActions = false
         motionMonitor.overrideThreshold = nil
         collector.stopObserving()
         // Restore original settings if user didn't explicitly save

@@ -1,12 +1,16 @@
+import ServiceManagement
 import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
+    @EnvironmentObject private var updateChecker: UpdateChecker
 
     @State private var selectedPattern: KnockPattern?
     @State private var showingCalibration = false
+    @State private var showingAdvanced = false
+    @State private var launchAtLogin = false
 
     var body: some View {
         ScrollView {
@@ -99,55 +103,121 @@ struct DashboardView: View {
     // MARK: - Calibration & Advanced Settings
 
     private var calibrationSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button("Recalibrate") {
-                    showingCalibration = true
-                }
-                .buttonStyle(.borderedProminent)
-
-                Spacer()
-
-                Button(engine.isMonitoring ? "Pause Monitoring" : "Resume Monitoring") {
-                    engine.toggleMonitoring()
-                }
-                .buttonStyle(.bordered)
+        HStack(spacing: 12) {
+            NeonButton(title: "Recalibrate", icon: "arrow.counterclockwise") {
+                showingCalibration = true
             }
 
-            DisclosureGroup("Advanced Settings") {
-                VStack(alignment: .leading, spacing: 18) {
-                    SliderRow(
-                        title: "Detection threshold",
-                        value: binding(\.detectionThreshold),
-                        range: 0.03...0.60,
-                        step: 0.01,
-                        format: .number.precision(.fractionLength(2))
-                    )
-                    SliderRow(
-                        title: "Grouping window",
-                        value: binding(\.groupingWindow),
-                        range: 0.20...0.70,
-                        step: 0.01,
-                        suffix: "ms",
-                        transform: { Int($0 * 1000) }
-                    )
-                    SliderRow(
-                        title: "Knock cooldown",
-                        value: binding(\.cooldown),
-                        range: 0.05...0.30,
-                        step: 0.01,
-                        suffix: "ms",
-                        transform: { Int($0 * 1000) }
-                    )
+            NeonButton(
+                title: engine.isMonitoring ? "Pause" : "Resume",
+                icon: engine.isMonitoring ? "pause" : "play"
+            ) {
+                engine.toggleMonitoring()
+            }
 
-                    Button("Reset Defaults") {
-                        settingsStore.reset()
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.top, 12)
+            Spacer()
+
+            Button {
+                showingAdvanced.toggle()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.accent.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.accent.opacity(0.3), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plainHandCursor)
+            .popover(isPresented: $showingAdvanced) {
+                advancedSettingsPopover
             }
         }
+    }
+
+    private var advancedSettingsPopover: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Advanced Settings")
+                .font(.headline)
+                .foregroundStyle(Theme.primaryText)
+
+            SliderRow(
+                title: "Detection threshold",
+                value: binding(\.detectionThreshold),
+                range: 0.03...0.60,
+                step: 0.01,
+                format: .number.precision(.fractionLength(2))
+            )
+            SliderRow(
+                title: "Grouping window",
+                value: binding(\.groupingWindow),
+                range: 0.20...0.70,
+                step: 0.01,
+                suffix: "ms",
+                transform: { Int($0 * 1000) }
+            )
+            SliderRow(
+                title: "Knock cooldown",
+                value: binding(\.cooldown),
+                range: 0.05...0.30,
+                step: 0.01,
+                suffix: "ms",
+                transform: { Int($0 * 1000) }
+            )
+
+            Divider()
+
+            Toggle("Launch at Login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { _, newValue in
+                    do {
+                        if newValue {
+                            try SMAppService.mainApp.register()
+                        } else {
+                            try SMAppService.mainApp.unregister()
+                        }
+                    } catch {
+                        launchAtLogin = SMAppService.mainApp.status == .enabled
+                    }
+                }
+                .onAppear {
+                    launchAtLogin = SMAppService.mainApp.status == .enabled
+                }
+
+            if case let .available(version, url) = updateChecker.status {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label("v\(version) available", systemImage: "arrow.down.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.info)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity)
+                        .background(Theme.infoSoft)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plainHandCursor)
+            }
+
+            Button("Check for Updates") {
+                Task { await updateChecker.checkNow() }
+            }
+            .font(.caption)
+            .foregroundStyle(Theme.accent)
+            .disabled(updateChecker.status == .checking)
+
+            Button("Reset Defaults") {
+                settingsStore.reset()
+            }
+            .font(.caption)
+            .foregroundStyle(Theme.warning)
+        }
+        .padding(20)
+        .frame(width: 320)
+        .background(Theme.panelStrong)
     }
 
     private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
@@ -157,6 +227,31 @@ struct DashboardView: View {
                 settingsStore.update { $0[keyPath: keyPath] = newValue }
             }
         )
+    }
+}
+
+// MARK: - Neon Button
+
+private struct NeonButton: View {
+    let title: String
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Theme.accent.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Theme.accent.opacity(0.3), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plainHandCursor)
     }
 }
 
@@ -192,10 +287,10 @@ private struct ActionSlotCard: View {
                 } else {
                     Image(systemName: "plus.circle.dashed")
                         .font(.title2)
-                        .foregroundStyle(Theme.secondaryText)
+                        .foregroundStyle(Theme.accent.opacity(0.5))
                     Text("Choose action")
                         .font(.headline)
-                        .foregroundStyle(Theme.secondaryText)
+                        .foregroundStyle(Theme.accent.opacity(0.5))
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
@@ -207,7 +302,7 @@ private struct ActionSlotCard: View {
                     .stroke(Theme.border, lineWidth: 1)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainHandCursor)
     }
 }
 

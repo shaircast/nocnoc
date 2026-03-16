@@ -1,13 +1,17 @@
+import AppKit
 import SwiftUI
 
 struct PresetPickerView: View {
     let pattern: KnockPattern
     let onSelect: (SlotConfiguration) -> Void
 
+    private enum Field { case search, parameter }
+
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var selectedPreset: ActionPreset?
     @State private var parameterValue = ""
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,6 +31,15 @@ struct PresetPickerView: View {
             Divider()
             footer
         }
+        .background(WindowKeyForcer())
+        .onAppear {
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                focusedField = .search
+            }
+        }
         .frame(width: 480, height: 520)
         .background(Theme.panel)
         .foregroundStyle(Theme.primaryText)
@@ -38,8 +51,12 @@ struct PresetPickerView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose action for \(pattern.title)")
                 .font(.title3.weight(.semibold))
-            TextField("Search...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
+            FocusableTextField(
+                placeholder: "Search...",
+                text: $searchText,
+                isFocused: focusedField == .search,
+                onFocus: { focusedField = .search }
+            )
         }
         .padding(24)
     }
@@ -66,8 +83,12 @@ struct PresetPickerView: View {
 
             if let selected = selectedPreset, selected.category == category,
                case .parameterized(_, _, let param) = selected.template {
-                TextField(param.label, text: $parameterValue, prompt: Text(param.placeholder))
-                    .textFieldStyle(.roundedBorder)
+                FocusableTextField(
+                    placeholder: param.placeholder,
+                    text: $parameterValue,
+                    isFocused: focusedField == .parameter,
+                    onFocus: { focusedField = .parameter }
+                )
                     .font(.system(.body, design: .monospaced))
             }
         }
@@ -107,6 +128,91 @@ struct PresetPickerView: View {
     }
 }
 
+private struct FocusableTextField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    let isFocused: Bool
+    let onFocus: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onFocus: onFocus)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = ActivatingTextField()
+        textField.delegate = context.coordinator
+        textField.placeholderString = placeholder
+        textField.focusRingType = .default
+        textField.isBordered = true
+        textField.isBezeled = true
+        textField.bezelStyle = .roundedBezel
+        textField.drawsBackground = true
+        textField.backgroundColor = .textBackgroundColor
+        textField.lineBreakMode = .byTruncatingTail
+        return textField
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+
+        if nsView.placeholderString != placeholder {
+            nsView.placeholderString = placeholder
+        }
+
+        context.coordinator.onFocus = onFocus
+
+        guard isFocused, let window = nsView.window else { return }
+        DispatchQueue.main.async {
+            guard window.firstResponder !== nsView.currentEditor() else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            window.orderFrontRegardless()
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(nsView)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+        var onFocus: () -> Void
+
+        init(text: Binding<String>, onFocus: @escaping () -> Void) {
+            self._text = text
+            self.onFocus = onFocus
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let textField = notification.object as? NSTextField else { return }
+            text = textField.stringValue
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            onFocus()
+        }
+    }
+}
+
+private final class ActivatingTextField: NSTextField {
+    override func mouseDown(with event: NSEvent) {
+        activateWindow()
+        super.mouseDown(with: event)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        activateWindow()
+        return super.becomeFirstResponder()
+    }
+
+    private func activateWindow() {
+        guard let window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(self)
+    }
+}
+
 // MARK: - Preset Tile
 
 private struct PresetTile: View {
@@ -132,6 +238,6 @@ private struct PresetTile: View {
                     .stroke(isSelected ? Theme.accent : Theme.border, lineWidth: isSelected ? 2 : 1)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainHandCursor)
     }
 }

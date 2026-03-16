@@ -7,7 +7,11 @@ final class KnockEngine: ObservableObject {
     @Published private(set) var lastTriggeredPattern: KnockPattern?
     @Published private(set) var lastTriggeredAt: Date?
     @Published private(set) var lastActionSummary = "Waiting for knocks"
+    /// Reflects the actual monitoring state from MotionMonitor.
     @Published private(set) var isMonitoring = false
+
+    /// When true, knock events are detected but actions are not executed (e.g. during calibration).
+    var suppressActions = false
 
     private let settingsStore: SettingsStore
     private let motionMonitor: MotionMonitor
@@ -24,10 +28,17 @@ final class KnockEngine: ObservableObject {
             }
             .store(in: &cancellables)
 
+        motionMonitor.$isMonitoring
+            .sink { [weak self] value in
+                self?.isMonitoring = value
+            }
+            .store(in: &cancellables)
+
         settingsStore.$settings
-            .sink { [weak self] settings in
-                self?.isMonitoring = settings.monitoringEnabled
-                self?.motionMonitor.reloadForSettingsChange()
+            .map(\.monitoringEnabled)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.motionMonitor.syncMonitoringState()
             }
             .store(in: &cancellables)
     }
@@ -38,15 +49,13 @@ final class KnockEngine: ObservableObject {
         }
     }
 
-    func openMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
     private var cancellables: Set<AnyCancellable> = []
 
     private func handle(event: KnockEvent) {
         lastTriggeredPattern = event.pattern
         lastTriggeredAt = event.timestamp
+
+        guard !suppressActions else { return }
 
         let slot = settingsStore.settings.slot(for: event.pattern)
         guard let resolved = PresetLibrary.resolve(slot) else {
@@ -74,13 +83,17 @@ private final class ActionRunner {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: executable)
                 process.arguments = arguments
+                let stderrPipe = Pipe()
+                process.standardError = stderrPipe
                 try process.run()
                 process.waitUntilExit()
 
                 if process.terminationStatus == 0 {
                     completion(.success(()))
                 } else {
-                    completion(.failure(ActionRunnerError.executionFailed(status: process.terminationStatus)))
+                    let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    let stderrText = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    completion(.failure(ActionRunnerError.executionFailed(status: process.terminationStatus, stderr: stderrText)))
                 }
             } catch {
                 completion(.failure(error))
@@ -90,12 +103,12 @@ private final class ActionRunner {
 }
 
 private enum ActionRunnerError: LocalizedError {
-    case executionFailed(status: Int32)
+    case executionFailed(status: Int32, stderr: String)
 
     var errorDescription: String? {
         switch self {
-        case .executionFailed(let status):
-            "Command exited with status \(status)"
+        case .executionFailed(let status, let stderr):
+            stderr.isEmpty ? "Command exited with status \(status)" : stderr
         }
     }
 }

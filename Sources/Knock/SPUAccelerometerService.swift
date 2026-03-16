@@ -95,6 +95,7 @@ final class SPUAccelerometerService {
     }
 
     private func handleReport(_ report: UnsafeMutablePointer<UInt8>, length: CFIndex) {
+        guard isRunning else { return }
         guard length == Self.imuReportLength else { return }
 
         let xRaw = Self.int32LE(report, offset: Self.imuPayloadOffset)

@@ -75,12 +75,10 @@ private final class KnockDetector {
             lastPeak = filteredMagnitude
         }
 
-        recentKnockTimes = recentKnockTimes.filter { now - $0 <= groupingWindow * 1.6 }
-
-        if
-            let lastKnockTime = recentKnockTimes.last,
-            now - lastKnockTime >= groupingWindow,
-            !recentKnockTimes.isEmpty
+        // FIRST: emission check (silence >= groupingWindow)
+        if let lastKnockTime = recentKnockTimes.last,
+           now - lastKnockTime >= groupingWindow,
+           !recentKnockTimes.isEmpty
         {
             let count = min(recentKnockTimes.count, 3)
             if let pattern = KnockPattern(rawValue: count) {
@@ -88,6 +86,9 @@ private final class KnockDetector {
             }
             recentKnockTimes.removeAll()
         }
+
+        // THEN: stale entries cleanup (only matters when no emission happened)
+        recentKnockTimes = recentKnockTimes.filter { now - $0 <= groupingWindow * 3.0 }
 
         let snapshot = SensorSnapshot(
             x: sample.x,
@@ -136,7 +137,6 @@ final class MotionMonitor: ObservableObject {
             )
 
             Task { @MainActor in
-                self.isMonitoring = true
                 self.snapshot = result.snapshot
                 self.pushWaveformSample(result.snapshot.filteredMagnitude * settings.waveformGain)
                 if let event = result.event {
@@ -172,6 +172,10 @@ final class MotionMonitor: ObservableObject {
     }
 
     func reloadForSettingsChange() {
+        syncMonitoringState()
+    }
+
+    func syncMonitoringState() {
         if settingsStore.settings.monitoringEnabled {
             start()
         } else {

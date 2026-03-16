@@ -34,7 +34,7 @@ struct AppSettings: Codable, Equatable {
 
     var singleSlot: SlotConfiguration = .init(presetId: "toggle-mute", parameterValue: "")
     var doubleSlot: SlotConfiguration = .init(presetId: "lock-screen", parameterValue: "")
-    var tripleSlot: SlotConfiguration = .init(presetId: "run-shortcut", parameterValue: "Open Notes")
+    var tripleSlot: SlotConfiguration = .init(presetId: "none", parameterValue: "")
 
     func slot(for pattern: KnockPattern) -> SlotConfiguration {
         switch pattern {
