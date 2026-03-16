@@ -35,12 +35,11 @@ Three scenes, modified from current:
 - App launch: main window (dashboard) opens + menubar icon appears
 - First launch: calibration wizard appears as `.sheet` over dashboard
 - Close main window: app continues running in menubar
-- Menubar popover: "Open nocnoc" reopens main window
+- Menubar popover: "Open nocnoc" reopens main window via `NSApp.activate(ignoringOtherApps: true)` + SwiftUI `@Environment(\.openWindow)` action
 - Quit: via menubar popover Quit button or Cmd+Q
 
 ### Preserved Components (no changes)
 
-- `MotionMonitor` — accelerometer data processing and knock detection
 - `SPUAccelerometerService` — IOKit HID interface to AppleSPUHIDDevice
 - `WaveformView` — real-time waveform Canvas rendering
 - `Theme` — color definitions
@@ -49,8 +48,9 @@ Three scenes, modified from current:
 
 - `KnockApp.swift` — remove Settings scene, add first-launch detection
 - `AppSettings.swift` — replace `ActionKind`/`KnockActionConfiguration` with preset-based model, add `hasCompletedCalibration` flag
-- `KnockEngine.swift` — update `ActionRunner` to execute preset templates
+- `KnockEngine.swift` — update `ActionRunner` to execute preset templates, rename `openSettings()` → `openMainWindow()` using `NSApp.activate(ignoringOtherApps: true)` (remove the `showSettingsWindow:` selector which targets the deleted Settings scene)
 - `MenuBarView.swift` — "Open Settings" → "Open nocnoc", add Quit button
+- `MotionMonitor.swift` — add `overrideThreshold: Double?` property for calibration wizard to bypass normal threshold
 
 ### Deleted Components
 
@@ -77,6 +77,8 @@ Three cards arranged horizontally for Single / Double / Triple knock patterns. E
 
 Click a card → preset picker popup opens.
 
+**Note:** Action slot cards are disabled while the calibration wizard sheet is open to prevent concurrent `.sheet` presentation conflicts.
+
 ### Middle — Waveform Monitor
 
 - Reuses existing `WaveformView` component
@@ -97,8 +99,10 @@ Click a card → preset picker popup opens.
 
 ### Data Model
 
+`ActionPreset` is a runtime-only type constructed from the static `PresetLibrary`. It is never persisted — only `SlotConfiguration` (preset ID + parameter value) is stored in `UserDefaults`. Therefore `ActionPreset` and `CommandTemplate` do not need `Codable` conformance.
+
 ```swift
-struct ActionPreset: Identifiable, Codable, Equatable {
+struct ActionPreset: Identifiable, Equatable {
     let id: String              // e.g., "toggle-mute"
     let name: String            // e.g., "Toggle Mute"
     let icon: String            // SF Symbol name
@@ -106,18 +110,19 @@ struct ActionPreset: Identifiable, Codable, Equatable {
     let template: CommandTemplate
 }
 
-enum PresetCategory: String, Codable, CaseIterable {
+enum PresetCategory: String, CaseIterable {
     case system     // macOS system controls
     case app        // App & Shortcut launchers
     case advanced   // Terminal command, none
 }
 
-enum CommandTemplate: Codable, Equatable {
+enum CommandTemplate: Equatable {
     case fixed(executable: String, arguments: [String])
     case parameterized(executable: String, argumentTemplate: [String], parameter: ParameterSpec)
+    case none       // Do Nothing
 }
 
-struct ParameterSpec: Codable, Equatable {
+struct ParameterSpec: Equatable {
     let label: String           // "App name"
     let placeholder: String     // "e.g., Spotify"
 }
@@ -128,37 +133,39 @@ struct SlotConfiguration: Codable, Equatable {
 }
 ```
 
+At runtime, `KnockEngine` resolves a `SlotConfiguration` to an `ActionPreset` by looking up `presetId` in `PresetLibrary`, then substitutes `parameterValue` into the template's `argumentTemplate` placeholders.
+
 ### Built-in Preset Library
 
 **System Controls:**
 
-| ID | Name | Command |
-|----|------|---------|
-| `toggle-mute` | Toggle Mute | `osascript -e 'set volume output muted (not (output muted of (get volume settings)))'` |
-| `lock-screen` | Lock Screen | `osascript -e 'tell app "System Events" to keystroke "q" using {control down, command down}'` |
-| `toggle-dnd` | Toggle Do Not Disturb | `shortcuts run "Toggle Do Not Disturb"` |
-| `brightness-up` | Brightness Up | `osascript -e 'tell app "System Events" to key code 144'` |
-| `brightness-down` | Brightness Down | `osascript -e 'tell app "System Events" to key code 145'` |
-| `volume-up` | Volume Up | `osascript -e 'set volume output volume ((output volume of (get volume settings)) + 10)'` |
-| `volume-down` | Volume Down | `osascript -e 'set volume output volume ((output volume of (get volume settings)) - 10)'` |
-| `screenshot` | Screenshot | `screencapture -i ~/Desktop/screenshot.png` |
-| `media-play-pause` | Play / Pause | `osascript -e 'tell app "System Events" to key code 16 using command down'` |
-| `media-next` | Next Track | `osascript -e 'tell app "System Events" to key code 124 using command down'` |
-| `media-previous` | Previous Track | `osascript -e 'tell app "System Events" to key code 123 using command down'` |
+| ID | Name | Executable | Arguments |
+|----|------|-----------|-----------|
+| `toggle-mute` | Toggle Mute | `/usr/bin/osascript` | `["-e", "set volume output muted (not (output muted of (get volume settings)))"]` |
+| `lock-screen` | Lock Screen | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to keystroke \"q\" using {control down, command down}"]` |
+| `toggle-dnd` | Toggle Do Not Disturb | `/usr/bin/shortcuts` | `["run", "Toggle Do Not Disturb"]` |
+| `brightness-up` | Brightness Up | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 144"]` |
+| `brightness-down` | Brightness Down | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 145"]` |
+| `volume-up` | Volume Up | `/usr/bin/osascript` | `["-e", "set volume output volume ((output volume of (get volume settings)) + 10)"]` |
+| `volume-down` | Volume Down | `/usr/bin/osascript` | `["-e", "set volume output volume ((output volume of (get volume settings)) - 10)"]` |
+| `screenshot` | Screenshot | `/usr/bin/screencapture` | `["-i", "~/Desktop/screenshot.png"]` |
+| `media-play-pause` | Play / Pause | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 101"]` |
+| `media-next` | Next Track | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 111"]` |
+| `media-previous` | Previous Track | `/usr/bin/osascript` | `["-e", "tell app \"System Events\" to key code 100"]` |
 
-**App & Shortcuts:**
+**App & Shortcuts (parameterized):**
 
-| ID | Name | Parameter |
-|----|------|-----------|
-| `launch-app` | Launch App | App name (e.g., "Spotify") |
-| `run-shortcut` | Run Shortcut | Shortcut name |
+| ID | Name | Executable | Argument Template | Parameter |
+|----|------|-----------|-------------------|-----------|
+| `launch-app` | Launch App | `/usr/bin/open` | `["-a", "{parameter}"]` | label: "App name", placeholder: "e.g., Spotify" |
+| `run-shortcut` | Run Shortcut | `/usr/bin/shortcuts` | `["run", "{parameter}"]` | label: "Shortcut name", placeholder: "e.g., Toggle Do Not Disturb" |
 
-**Advanced:**
+**Advanced (parameterized):**
 
-| ID | Name | Parameter |
-|----|------|-----------|
-| `shell-command` | Terminal Command | Shell command (`zsh -lc`) |
-| `none` | Do Nothing | — |
+| ID | Name | Executable | Argument Template | Parameter |
+|----|------|-----------|-------------------|-----------|
+| `shell-command` | Terminal Command | `/bin/zsh` | `["-lc", "{parameter}"]` | label: "Shell command", placeholder: "e.g., echo hello" |
+| `none` | Do Nothing | — | — | — |
 
 ### Preset Picker Popup
 
@@ -187,6 +194,13 @@ var hasCompletedCalibration: Bool = false
 ```
 
 Existing `ActionKind` enum and `KnockActionConfiguration` struct are removed. `KnockPattern` enum is preserved.
+
+**Migration strategy:** The existing `UserDefaults` key (`tryknock.settings`) stores the old `AppSettings` format. On decode failure (which will happen when old data is present), `SettingsStore` falls through to the default `AppSettings()` initializer. Default slot values should match the previous hardcoded defaults:
+- `singleSlot`: `SlotConfiguration(presetId: "toggle-mute", parameterValue: "")`
+- `doubleSlot`: `SlotConfiguration(presetId: "lock-screen", parameterValue: "")`
+- `tripleSlot`: `SlotConfiguration(presetId: "run-shortcut", parameterValue: "Open Notes")`
+
+This is a graceful degradation — existing users get the same behavior by default. No explicit migration code is needed because the existing `try?` decode already returns `nil` on failure.
 
 ## Calibration Wizard
 
@@ -217,14 +231,16 @@ Each step shows:
 - Step 2: Time intervals between consecutive knocks → determines grouping window (average interval × 1.3)
 - Step 3: Reinforces step 2 data + determines cooldown (minimum inter-knock interval × 0.8)
 
-**Implementation note:** During calibration, the wizard observes `MotionMonitor`'s raw `snapshot.filteredMagnitude` directly with a low temporary threshold (e.g., 0.03) to capture all taps. It does NOT use the existing `KnockDetector` pattern recognition since thresholds haven't been determined yet.
+**Value clamping:** All computed values are clamped to valid slider ranges before being applied: threshold to [0.03, 0.60], grouping window to [0.20, 0.70] seconds, cooldown to [0.05, 0.30] seconds.
+
+**Implementation note:** During calibration, the wizard sets `MotionMonitor.overrideThreshold = 0.03` to capture all taps regardless of the user's current threshold setting. This is a new optional property on `MotionMonitor` — when non-nil, it overrides `settingsStore.settings.detectionThreshold` in the `KnockDetector.process()` call. The wizard resets it to `nil` on completion or cancellation. The existing `KnockDetector` pattern recognition is NOT used during steps 1–3; the wizard performs its own peak detection on `snapshot.filteredMagnitude`.
 
 **Step 4: Test & Confirm**
 
 - Shows computed values (power threshold, grouping window, cooldown)
 - Applies values temporarily to the live detection engine
 - User knocks freely; recognized patterns shown with visual feedback
-- "Save" → writes to `SettingsStore`, sets `hasCompletedCalibration = true`
+- "Save" → writes to `SettingsStore`, sets `hasCompletedCalibration = true`, resets `overrideThreshold` to `nil`
 - "Start Over" → returns to step 1, discards collected data
 
 ## MenuBar Popover
@@ -242,7 +258,7 @@ Open nocnoc              ← was "Open Settings"
 Quit                     ← new
 ```
 
-"Open nocnoc" activates the app and shows the main window. Quit terminates the app.
+"Open nocnoc" calls the renamed `engine.openMainWindow()` which uses `NSApp.activate(ignoringOtherApps: true)` to bring the dashboard window to front. Quit calls `NSApp.terminate(nil)`.
 
 ## File Changes Summary
 
@@ -253,10 +269,10 @@ Quit                     ← new
 | `PresetPickerView.swift` | Create | Preset selection popup |
 | `CalibrationWizard.swift` | Create | 4-step calibration flow |
 | `PresetLibrary.swift` | Create | Built-in preset definitions, ActionPreset model |
-| `AppSettings.swift` | Modify | Preset-based model, calibration flag |
-| `KnockEngine.swift` | Modify | ActionRunner uses preset templates |
+| `AppSettings.swift` | Modify | Preset-based model, calibration flag, migration-safe defaults |
+| `KnockEngine.swift` | Modify | ActionRunner uses preset templates, `openSettings()` → `openMainWindow()` |
 | `MenuBarView.swift` | Modify | "Open nocnoc", Quit button |
-| `MotionMonitor.swift` | Keep | No changes |
+| `MotionMonitor.swift` | Modify | Add `overrideThreshold: Double?` for calibration |
 | `SPUAccelerometerService.swift` | Keep | No changes |
 | `WaveformView.swift` | Keep | No changes |
 | `Theme.swift` | Keep | No changes |
