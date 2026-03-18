@@ -19,7 +19,7 @@ final class UpdateChecker: ObservableObject {
     private var timer: Timer?
 
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.1"
     }
 
     func startPeriodicChecks() {

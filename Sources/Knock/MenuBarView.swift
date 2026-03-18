@@ -14,22 +14,13 @@ struct MenuBarView: View {
             Text("nocnoc")
                 .font(.title2.weight(.bold))
 
-            if case let .available(version, url) = updateChecker.status {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Label("Update available: v\(version)", systemImage: "arrow.down.circle")
-                        .font(.caption)
-                        .foregroundStyle(Theme.info)
-                }
-                .buttonStyle(.plainHandCursor)
-            }
+            updateStatusView
 
             Text(engine.lastActionSummary)
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            WaveformView(values: motionMonitor.waveform, threshold: settingsStore.settings.detectionThreshold * settingsStore.settings.waveformGain)
+            WaveformView(values: motionMonitor.waveform, threshold: motionMonitor.snapshot.threshold * settingsStore.settings.waveformGain)
                 .frame(height: 80)
                 .padding(10)
                 .background(Theme.darkPanel)
@@ -38,7 +29,7 @@ struct MenuBarView: View {
             HStack {
                 Label(engine.isMonitoring ? "Monitoring" : "Paused", systemImage: engine.isMonitoring ? "dot.radiowaves.left.and.right" : "pause.circle")
                 Spacer()
-                Text("T \(settingsStore.settings.detectionThreshold.formatted(.number.precision(.fractionLength(2))))")
+                Text("T \(motionMonitor.snapshot.threshold.formatted(.number.precision(.fractionLength(2))))")
                     .font(.system(.body, design: .monospaced))
             }
             .font(.caption)
@@ -75,5 +66,34 @@ struct MenuBarView: View {
         .padding(16)
         .background(Theme.panel)
         .foregroundStyle(Theme.primaryText)
+    }
+
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updateChecker.status {
+        case .idle:
+            EmptyView()
+        case .checking:
+            Label("Checking for updates...", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+        case .upToDate:
+            Label("You're up to date", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(Theme.accent)
+        case .failed:
+            Label("Update check failed", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(Theme.warning)
+        case .available(let version, let url):
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Label("Update available: v\(version)", systemImage: "arrow.down.circle")
+                    .font(.caption)
+                    .foregroundStyle(Theme.info)
+            }
+            .buttonStyle(.plainHandCursor)
+        }
     }
 }

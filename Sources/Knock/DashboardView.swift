@@ -72,7 +72,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             WaveformView(
                 values: motionMonitor.waveform,
-                threshold: settingsStore.settings.detectionThreshold * settingsStore.settings.waveformGain
+                threshold: motionMonitor.snapshot.threshold * settingsStore.settings.waveformGain
             )
             .frame(height: 180)
             .padding(18)
@@ -186,21 +186,7 @@ struct DashboardView: View {
                     launchAtLogin = SMAppService.mainApp.status == .enabled
                 }
 
-            if case let .available(version, url) = updateChecker.status {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Label("v\(version) available", systemImage: "arrow.down.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Theme.info)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity)
-                        .background(Theme.infoSoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plainHandCursor)
-            }
+            updateStatusView
 
             Button("Check for Updates") {
                 Task { await updateChecker.checkNow() }
@@ -218,6 +204,65 @@ struct DashboardView: View {
         .padding(20)
         .frame(width: 320)
         .background(Theme.panelStrong)
+    }
+
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updateChecker.status {
+        case .idle:
+            EmptyView()
+        case .checking:
+            updateStatusBadge(
+                title: "Checking for updates...",
+                systemImage: "arrow.triangle.2.circlepath",
+                foreground: Theme.secondaryText,
+                background: Theme.border.opacity(0.45)
+            )
+        case .upToDate:
+            updateStatusBadge(
+                title: "You're up to date",
+                systemImage: "checkmark.circle.fill",
+                foreground: Theme.accent,
+                background: Theme.accentSoft
+            )
+        case .failed:
+            updateStatusBadge(
+                title: "Update check failed",
+                systemImage: "exclamationmark.triangle.fill",
+                foreground: Theme.warning,
+                background: Theme.warningSoft
+            )
+        case .available(let version, let url):
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Label("v\(version) available", systemImage: "arrow.down.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.info)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.infoSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plainHandCursor)
+        }
+    }
+
+    private func updateStatusBadge(
+        title: String,
+        systemImage: String,
+        foreground: Color,
+        background: Color
+    ) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(background)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {

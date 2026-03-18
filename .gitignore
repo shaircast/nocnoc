@@ -7,7 +7,8 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 /dist
-/scripts
+/scripts/*
+!/scripts/build.sh
 .superpowers/
 docs/superpowers/
 .vscode/

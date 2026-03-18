@@ -46,7 +46,7 @@ Single, double, and triple knock patterns are each mapped to different actions.
 ### From Source
 
 ```bash
-git clone https://github.com/user/nocnoc.git
+git clone https://github.com/shaircast/nocnoc.git
 cd nocnoc
 swift run
 ```
@@ -57,6 +57,8 @@ swift run
 ./scripts/build.sh
 open dist/nocnoc.app
 ```
+
+To produce a signed, notarized release build, set `APPLE_CODESIGN_IDENTITY` and `APPLE_NOTARY_PROFILE` before running the script.
 
 ## Default Actions
 
