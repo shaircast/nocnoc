@@ -25,7 +25,7 @@ enum KnockPattern: Int, CaseIterable, Codable, Identifiable {
 }
 
 struct AppSettings: Codable, Equatable {
-    var detectionThreshold: Double = 0.14
+    var detectionThreshold: Double = 0.03
     var groupingWindow: Double = 0.40
     var cooldown: Double = 0.12
     var waveformGain: Double = 3.0
@@ -51,6 +51,10 @@ struct AppSettings: Codable, Equatable {
         case .triple: tripleSlot = slot
         }
     }
+
+    mutating func normalize() {
+        detectionThreshold = min(max(detectionThreshold, 0.01), 0.10)
+    }
 }
 
 @MainActor
@@ -70,7 +74,9 @@ final class SettingsStore: ObservableObject {
             let data = userDefaults.data(forKey: defaultsKey),
             let decoded = try? decoder.decode(AppSettings.self, from: data)
         {
-            settings = decoded
+            var normalized = decoded
+            normalized.normalize()
+            settings = normalized
         } else {
             settings = AppSettings()
         }
@@ -79,6 +85,7 @@ final class SettingsStore: ObservableObject {
     func update(_ mutate: (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
+        copy.normalize()
         settings = copy
     }
 

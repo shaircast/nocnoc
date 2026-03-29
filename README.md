@@ -60,6 +60,8 @@ open dist/nocnoc.app
 
 To produce a signed, notarized release build, set `APPLE_CODESIGN_IDENTITY` and `APPLE_NOTARY_PROFILE` before running the script.
 
+On first use, macOS may ask you to allow Accessibility access for actions that simulate system key presses, such as Lock Screen, Brightness Up/Down, and custom keyboard shortcuts.
+
 ## Default Actions
 
 | Pattern | Action |

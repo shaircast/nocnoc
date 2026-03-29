@@ -4,8 +4,8 @@ set -euo pipefail
 # ── Configuration ──────────────────────────────────────────────
 APP_NAME="nocnoc"
 BUNDLE_ID="com.saturnstudio.nocnoc"
-VERSION="1.0.1"
-BUILD_NUMBER="2"
+VERSION="1.0.2"
+BUILD_NUMBER="3"
 ENTITLEMENTS="entitlements.plist"
 IDENTITY="${APPLE_CODESIGN_IDENTITY:-}"
 NOTARY_PROFILE="${APPLE_NOTARY_PROFILE:-}"

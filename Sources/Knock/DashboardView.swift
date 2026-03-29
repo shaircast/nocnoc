@@ -2,6 +2,11 @@ import ServiceManagement
 import SwiftUI
 
 struct DashboardView: View {
+    private enum SetupFlow {
+        case onboarding
+        case recalibration
+    }
+
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
@@ -9,6 +14,7 @@ struct DashboardView: View {
 
     @State private var selectedPattern: KnockPattern?
     @State private var showingCalibration = false
+    @State private var setupFlow: SetupFlow = .recalibration
     @State private var showingAdvanced = false
     @State private var launchAtLogin = false
 
@@ -30,19 +36,24 @@ struct DashboardView: View {
         )
         .foregroundStyle(Theme.primaryText)
         .sheet(item: $selectedPattern) { pattern in
-            PresetPickerView(pattern: pattern) { slot in
+            PresetPickerView(
+                pattern: pattern,
+                initialSlot: settingsStore.settings.slot(for: pattern)
+            ) { slot in
                 settingsStore.update { settings in
                     settings.setSlot(slot, for: pattern)
                 }
             }
         }
         .sheet(isPresented: $showingCalibration) {
-            CalibrationWizard()
+            CalibrationWizard(mode: setupFlow == .onboarding ? .onboarding : .calibrationOnly)
                 .environmentObject(settingsStore)
                 .environmentObject(motionMonitor)
+                .environmentObject(engine)
         }
         .onAppear {
             if !settingsStore.settings.hasCompletedCalibration {
+                setupFlow = .onboarding
                 showingCalibration = true
             }
         }
@@ -105,6 +116,7 @@ struct DashboardView: View {
     private var calibrationSection: some View {
         HStack(spacing: 12) {
             NeonButton(title: "Recalibrate", icon: "arrow.counterclockwise") {
+                setupFlow = .recalibration
                 showingCalibration = true
             }
 
@@ -147,7 +159,7 @@ struct DashboardView: View {
             SliderRow(
                 title: "Detection threshold",
                 value: binding(\.detectionThreshold),
-                range: 0.03...0.60,
+                range: 0.01...0.10,
                 step: 0.01,
                 format: .number.precision(.fractionLength(2))
             )
@@ -323,8 +335,8 @@ private struct ActionSlotCard: View {
                         .font(.title2)
                     Text(preset.name)
                         .font(.headline)
-                    if !slot.parameterValue.isEmpty {
-                        Text(slot.parameterValue)
+                    if let detailSummary = slot.detailSummary {
+                        Text(detailSummary)
                             .font(.caption)
                             .foregroundStyle(Theme.secondaryText)
                             .lineLimit(1)
