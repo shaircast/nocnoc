@@ -7,18 +7,14 @@ BUNDLE_ID="com.saturnstudio.nocnoc"
 VERSION="1.0.2"
 BUILD_NUMBER="3"
 ENTITLEMENTS="entitlements.plist"
-IDENTITY="${APPLE_CODESIGN_IDENTITY:-}"
-NOTARY_PROFILE="${APPLE_NOTARY_PROFILE:-}"
+IDENTITY="${APPLE_CODESIGN_IDENTITY:-Developer ID Application: Saturn Studio (449B2G47F7)}"
+NOTARY_PROFILE="${APPLE_NOTARY_PROFILE:-notarytool-profile}"
 
 DIST_DIR="dist"
 BUNDLE="$DIST_DIR/$APP_NAME.app"
 ZIP="$DIST_DIR/$APP_NAME.zip"
 DMG="$DIST_DIR/$APP_NAME.dmg"
-SIGNED_RELEASE=false
-
-if [ -n "$IDENTITY" ] && [ -n "$NOTARY_PROFILE" ]; then
-    SIGNED_RELEASE=true
-fi
+SIGNED_RELEASE=true
 
 # ── Step 1: Build ──────────────────────────────────────────────
 echo "▸ Building with Swift (release)..."
