@@ -383,6 +383,9 @@ private final class HotkeyRecorderTextField: ActivatingTextField {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
         capture(event)
         return true
     }
@@ -433,7 +436,8 @@ private enum HotkeyEventParser {
     ]
 
     static func shouldClear(event: NSEvent) -> Bool {
-        event.keyCode == 51 || event.keyCode == 117
+        (event.keyCode == 51 || event.keyCode == 117)
+            && modifiers(from: event.modifierFlags).isEmpty
     }
 
     static func configuration(for event: NSEvent) -> HotkeyConfiguration? {
