@@ -34,6 +34,7 @@ Single, double, and triple knock patterns are each mapped to different actions.
 - **Calibration wizard** — guided setup to tune sensitivity for your knock style
 - **Adjustable parameters** — threshold, grouping window, cooldown, waveform gain
 - **Menu bar + dashboard** — quick access from the menu bar, full controls in the window
+- **In-app updates** — Sparkle checks for releases and downloads and installs updates
 
 ## Requirements
 
@@ -43,24 +44,48 @@ Single, double, and triple knock patterns are each mapped to different actions.
 
 ## Installation
 
+Download `nocnoc.dmg` from the [latest release](https://github.com/shaircast/nocnoc/releases/latest), then drag nocnoc into Applications.
+
+Version 1.0.3 introduces Sparkle. Users on 1.0.2 or earlier need to install this version manually once; later updates can be installed from inside the app.
+
 ### From Source
+
+Building requires Swift 6.0 or later and the macOS 15 SDK or later (Xcode 16+). Check `swift --version` and `xcrun --sdk macosx --show-sdk-version` if the build reports a tools-version or macOS platform error. Select a compatible Xcode installation with `DEVELOPER_DIR` if multiple toolchains are installed.
 
 ```bash
 git clone https://github.com/shaircast/nocnoc.git
 cd nocnoc
-swift run
+./scripts/build.sh --unsigned
 ```
 
-### Build as .app
+The script builds `dist/nocnoc.app` with its embedded Sparkle framework. It does not launch the app. This local mode applies an ad-hoc signature without accessing the Keychain and skips Developer ID signing, notarization, and release archives; Swift Package Manager downloads dependencies as needed.
 
-```bash
-./scripts/build.sh
-open dist/nocnoc.app
-```
-
-To produce a signed, notarized release build, set `APPLE_CODESIGN_IDENTITY` and `APPLE_NOTARY_PROFILE` before running the script.
+Sparkle requires an application bundle to update the app. Running the bare Swift executable is only useful for development; update checking is disabled outside a `.app` bundle.
 
 On first use, macOS may ask you to allow Accessibility access for actions that simulate system key presses, such as Lock Screen, Brightness Up/Down, and custom keyboard shortcuts.
+
+### Release Builds and Sparkle
+
+The public update-signing key is committed in `sparkle-public-key.txt` and embedded as `SUPublicEDKey`. Its private key belongs in the signing Mac's login Keychain under account `com.saturnstudio.nocnoc.sparkle`; it must not be committed to the repository. Back up this private key securely. When moving to another signing Mac, restore that same key with Sparkle's `generate_keys --account com.saturnstudio.nocnoc.sparkle -f /secure/path/to/key` after `swift package resolve`. Sparkle's tools are in `.build/artifacts/sparkle/Sparkle/bin`. The release scripts check that the Keychain's public key matches the app before signing updates.
+
+For each release:
+
+1. Increase both `VERSION` and `BUILD_NUMBER` in `scripts/build.sh`. Sparkle compares the incrementing build number.
+2. Configure a Developer ID signing identity and a saved `notarytool` Keychain profile, then run:
+
+   ```bash
+   APPLE_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+   APPLE_NOTARY_PROFILE="your-notary-profile" \
+   ./scripts/build.sh
+   ```
+
+3. Upload `dist/nocnoc.zip`, `dist/nocnoc.dmg`, and `dist/appcast.xml` together to the GitHub release tagged `vVERSION`, and mark it as the latest release. The scripts prepare files locally and do not publish them.
+
+The build script signs Sparkle's nested helpers, framework, and app, notarizes the app, and recreates the ZIP after stapling its ticket. It then prepares the notarized DMG and signs the final ZIP's appcast entry with Sparkle's Ed25519 key. The appcast itself is also signed, while the app retains Sparkle's default validation policy: signed feeds are not required. To regenerate only the appcast from an existing release ZIP, run `./scripts/generate-appcast.sh dist/nocnoc.zip`; do not alter the archive after generating its signature.
+
+The app checks `https://github.com/shaircast/nocnoc/releases/latest/download/appcast.xml` every four hours by default. Each feed points to the immutable `releases/download/vVERSION/nocnoc.zip` URL for that release. Publish all three files before marking a release as latest so the feed and archive are available together. The initial 1.0.3 release must include the feed to enable future in-app updates.
+
+See Sparkle's [integration guide](https://sparkle-project.org/documentation/), [manual code-signing instructions](https://sparkle-project.org/documentation/sandboxing/#code-signing), and [publishing guide](https://sparkle-project.org/documentation/publishing/) for framework and signing details.
 
 ## Default Actions
 
@@ -88,6 +113,7 @@ All actions are configurable in the dashboard.
 | Sensor | IOKit HID (`AppleSPUHIDDevice`) |
 | Actions | osascript, Shortcuts CLI, Process API |
 | Build | Swift Package Manager |
+| Updates | Sparkle 2 (signed appcast and update archives) |
 
 ## Note
 

@@ -10,7 +10,7 @@ struct DashboardView: View {
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
-    @EnvironmentObject private var updateChecker: UpdateChecker
+    @EnvironmentObject private var updater: AppUpdater
 
     @State private var selectedPattern: KnockPattern?
     @State private var showingCalibration = false
@@ -198,14 +198,19 @@ struct DashboardView: View {
                     launchAtLogin = SMAppService.mainApp.status == .enabled
                 }
 
-            updateStatusView
+            Toggle("Automatically Check for Updates", isOn: Binding(
+                get: { updater.automaticallyChecksForUpdates },
+                set: { updater.setAutomaticallyChecksForUpdates($0) }
+            ))
+            .disabled(!updater.isAvailable)
 
-            Button("Check for Updates") {
-                Task { await updateChecker.checkNow() }
+            Button(action: updater.checkForUpdates) {
+                Text(updater.availableVersion.map { "Update available: v\($0)" } ?? "Check for Updates…")
             }
             .font(.caption)
             .foregroundStyle(Theme.accent)
-            .disabled(updateChecker.status == .checking)
+            .disabled(!updater.canCheckForUpdates)
+            .help(updater.isAvailable ? "Check for a new version of nocnoc" : "Install the packaged app to enable updates")
 
             Button("Reset Defaults") {
                 settingsStore.reset()
@@ -216,65 +221,6 @@ struct DashboardView: View {
         .padding(20)
         .frame(width: 320)
         .background(Theme.panelStrong)
-    }
-
-    @ViewBuilder
-    private var updateStatusView: some View {
-        switch updateChecker.status {
-        case .idle:
-            EmptyView()
-        case .checking:
-            updateStatusBadge(
-                title: "Checking for updates...",
-                systemImage: "arrow.triangle.2.circlepath",
-                foreground: Theme.secondaryText,
-                background: Theme.border.opacity(0.45)
-            )
-        case .upToDate:
-            updateStatusBadge(
-                title: "You're up to date",
-                systemImage: "checkmark.circle.fill",
-                foreground: Theme.accent,
-                background: Theme.accentSoft
-            )
-        case .failed:
-            updateStatusBadge(
-                title: "Update check failed",
-                systemImage: "exclamationmark.triangle.fill",
-                foreground: Theme.warning,
-                background: Theme.warningSoft
-            )
-        case .available(let version, let url):
-            Button {
-                NSWorkspace.shared.open(url)
-            } label: {
-                Label("v\(version) available", systemImage: "arrow.down.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.info)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-                    .background(Theme.infoSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plainHandCursor)
-        }
-    }
-
-    private func updateStatusBadge(
-        title: String,
-        systemImage: String,
-        foreground: Color,
-        background: Color
-    ) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {

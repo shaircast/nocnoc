@@ -9,6 +9,7 @@ DerivedData/
 /dist
 /scripts/*
 !/scripts/build.sh
+!/scripts/generate-appcast.sh
 .superpowers/
 docs/superpowers/
 .vscode/
