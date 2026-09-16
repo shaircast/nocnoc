@@ -6,7 +6,7 @@ struct MenuBarView: View {
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
-    @EnvironmentObject private var updateChecker: UpdateChecker
+    @EnvironmentObject private var updater: AppUpdater
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -14,7 +14,17 @@ struct MenuBarView: View {
             Text("nocnoc")
                 .font(.title2.weight(.bold))
 
-            updateStatusView
+            Button(action: updater.checkForUpdates) {
+                Label(
+                    updater.availableVersion.map { "Update available: v\($0)" } ?? "Check for Updates…",
+                    systemImage: "arrow.down.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            }
+            .buttonStyle(.plainHandCursor)
+            .disabled(!updater.canCheckForUpdates)
+            .help(updater.isAvailable ? "Check for a new version of nocnoc" : "Install the packaged app to enable updates")
 
             Text(engine.lastActionSummary)
                 .foregroundStyle(Theme.secondaryText)
@@ -66,34 +76,5 @@ struct MenuBarView: View {
         .padding(16)
         .background(Theme.panel)
         .foregroundStyle(Theme.primaryText)
-    }
-
-    @ViewBuilder
-    private var updateStatusView: some View {
-        switch updateChecker.status {
-        case .idle:
-            EmptyView()
-        case .checking:
-            Label("Checking for updates...", systemImage: "arrow.triangle.2.circlepath")
-                .font(.caption)
-                .foregroundStyle(Theme.secondaryText)
-        case .upToDate:
-            Label("You're up to date", systemImage: "checkmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(Theme.accent)
-        case .failed:
-            Label("Update check failed", systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(Theme.warning)
-        case .available(let version, let url):
-            Button {
-                NSWorkspace.shared.open(url)
-            } label: {
-                Label("Update available: v\(version)", systemImage: "arrow.down.circle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.info)
-            }
-            .buttonStyle(.plainHandCursor)
-        }
     }
 }

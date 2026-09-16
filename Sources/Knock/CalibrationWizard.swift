@@ -1,61 +1,92 @@
 import Combine
+import AppKit
 import SwiftUI
 
 struct CalibrationWizard: View {
+    enum Mode {
+        case onboarding
+        case calibrationOnly
+    }
+
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
     @Environment(\.dismiss) private var dismiss
 
-    @State private var step = 1
+    let mode: Mode
+
+    @State private var step: Int
     @State private var collector = CalibrationCollector()
     @State private var computedSettings: ComputedCalibration?
     @State private var lastRecognizedPattern: String = "None"
     @State private var settingsBeforeCalibration: AppSettings?
+    @State private var accessibilityGranted = AccessibilityPermission.isTrusted(promptIfNeeded: false)
+    @State private var automationStatus: AutomationPermission.Status = .notDetermined
+    @State private var isRequestingAccessibility = false
+    @State private var isRequestingAutomation = false
+
+    init(mode: Mode = .calibrationOnly) {
+        self.mode = mode
+        _step = State(initialValue: 1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             progressBar
             Divider()
 
-            Group {
-                switch step {
-                case 1: collectionStep(
-                    title: "Knock once on your MacBook",
-                    subtitle: "Repeat 3–5 times. We'll measure the impact strength.",
-                    knockCount: collector.singleKnocks.count
-                )
-                case 2: collectionStep(
-                    title: "Knock twice quickly",
-                    subtitle: "Repeat 3–5 times. We'll measure the timing between knocks.",
-                    knockCount: collector.doubleKnocks.count
-                )
-                case 3: collectionStep(
-                    title: "Knock three times quickly",
-                    subtitle: "Repeat 3–5 times. This refines the timing calibration.",
-                    knockCount: collector.tripleKnocks.count
-                )
-                case 4: testStep
-                default: EmptyView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            stepContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
             footerButtons
         }
-        .frame(width: 520, height: step == 4 ? 660 : 580)
+        .frame(width: 560, height: isTestStep ? 660 : 600)
         .background(Theme.panel)
         .foregroundStyle(Theme.primaryText)
         .onAppear { beginCalibration() }
         .onDisappear { endCalibration() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissionStatuses()
+        }
+    }
+
+    @ViewBuilder
+    private var stepContent: some View {
+        if mode == .onboarding && step == 1 {
+            introStep
+        } else if mode == .onboarding && step == 2 {
+            permissionsStep
+        } else if currentCalibrationStep == 1 {
+            collectionStep(
+                    title: "Knock once on your MacBook",
+                    subtitle: "Repeat 3–5 times. We'll measure the impact strength.",
+                    knockCount: collector.singleKnocks.count
+                )
+        } else if currentCalibrationStep == 2 {
+            collectionStep(
+                    title: "Knock twice quickly",
+                    subtitle: "Repeat 3–5 times. We'll measure the timing between knocks.",
+                    knockCount: collector.doubleKnocks.count
+                )
+        } else if currentCalibrationStep == 3 {
+            collectionStep(
+                    title: "Knock three times quickly",
+                    subtitle: "Repeat 3–5 times. This refines the timing calibration.",
+                    knockCount: collector.tripleKnocks.count
+                )
+        } else if isTestStep {
+            testStep
+        } else {
+            EmptyView()
+        }
     }
 
     // MARK: - Progress Bar
 
     private var progressBar: some View {
         HStack(spacing: 4) {
-            ForEach(1...4, id: \.self) { i in
+            ForEach(1...totalSteps, id: \.self) { i in
                 Capsule()
                     .fill(i <= step ? Theme.accent : Theme.border)
                     .frame(height: 4)
@@ -63,6 +94,210 @@ struct CalibrationWizard: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
+    }
+
+    private var totalSteps: Int {
+        mode == .onboarding ? 6 : 4
+    }
+
+    private var currentCalibrationStep: Int? {
+        switch mode {
+        case .onboarding:
+            switch step {
+            case 3: 1
+            case 4: 2
+            case 5: 3
+            default: nil
+            }
+        case .calibrationOnly:
+            switch step {
+            case 1: 1
+            case 2: 2
+            case 3: 3
+            default: nil
+            }
+        }
+    }
+
+    private var isTestStep: Bool {
+        switch mode {
+        case .onboarding:
+            step == 6
+        case .calibrationOnly:
+            step == 4
+        }
+    }
+
+    // MARK: - Intro Step
+
+    private var introStep: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Spacer()
+
+            Text("Welcome to nocnoc")
+                .font(.system(size: 30, weight: .bold))
+
+            Text("Knock on your MacBook to run actions without touching the keyboard or trackpad.")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(Theme.primaryText)
+
+            VStack(alignment: .leading, spacing: 14) {
+                onboardingFeatureRow(
+                    icon: "waveform.path.ecg",
+                    title: "Detect knock patterns",
+                    detail: "Single, double, and triple knocks are recognized separately."
+                )
+                onboardingFeatureRow(
+                    icon: "bolt.horizontal.circle",
+                    title: "Run system actions fast",
+                    detail: "Mute, lock screen, shortcuts, app launch, and custom hotkeys."
+                )
+                onboardingFeatureRow(
+                    icon: "slider.horizontal.3",
+                    title: "Calibrate to your knock style",
+                    detail: "We tune the threshold and timing so detection feels reliable on your machine."
+                )
+            }
+            .padding(22)
+            .background(Theme.panelStrong)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+            Text("Next, we'll grant the recommended permissions first, then calibrate the knock sensor.")
+                .foregroundStyle(Theme.secondaryText)
+
+            Spacer()
+        }
+        .padding(32)
+    }
+
+    private func onboardingFeatureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Permission Step
+
+    private var permissionsStep: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Grant Recommended Permissions")
+                .font(.title2.weight(.bold))
+
+            Text("These permissions unlock the default Lock Screen action and any shortcut that simulates system key presses.")
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            permissionCard(
+                title: "Accessibility",
+                subtitle: "Required for Lock Screen, Brightness, and custom keyboard shortcut actions.",
+                statusTitle: accessibilityStatusTitle,
+                isGranted: accessibilityGranted,
+                actionTitle: isRequestingAccessibility ? "Waiting..." : "Grant Accessibility",
+                secondaryTitle: accessibilityGranted ? nil : "Open Settings",
+                isWorking: isRequestingAccessibility,
+                action: requestAccessibilityPermission,
+                secondaryAction: {
+                    AccessibilityPermission.requestIfNeeded()
+                    refreshPermissionStatuses()
+                }
+            )
+
+            permissionCard(
+                title: "System Events Automation",
+                subtitle: "Lets nocnoc control System Events so AppleScript-based actions can run without interruption.",
+                statusTitle: automationStatusTitle,
+                isGranted: automationStatus == .granted,
+                actionTitle: isRequestingAutomation ? "Waiting..." : "Allow System Events",
+                secondaryTitle: automationStatus == .granted ? nil : "Open Settings",
+                isWorking: isRequestingAutomation,
+                action: requestAutomationPermission,
+                secondaryAction: AutomationPermission.openSystemSettings
+            )
+
+            HStack {
+                Label("Recommended", systemImage: recommendedPermissionsGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(recommendedPermissionsGranted ? Theme.accent : Theme.warning)
+                Spacer()
+                if !recommendedPermissionsGranted {
+                    Text("You can continue, but default shortcut actions may fail until these are allowed.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 280)
+                }
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .padding(32)
+        .task {
+            refreshPermissionStatuses()
+        }
+    }
+
+    private func permissionCard(
+        title: String,
+        subtitle: String,
+        statusTitle: String,
+        isGranted: Bool,
+        actionTitle: String,
+        secondaryTitle: String?,
+        isWorking: Bool,
+        action: @escaping () -> Void,
+        secondaryAction: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(.headline)
+                    Text(subtitle)
+                        .foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Text(statusTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isGranted ? Theme.accent : Theme.warning)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background((isGranted ? Theme.accentSoft : Theme.warningSoft))
+                    .clipShape(Capsule())
+            }
+
+            HStack(spacing: 10) {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.plainHandCursor)
+                    .disabled(isWorking)
+
+                if let secondaryTitle {
+                    Button(secondaryTitle, action: secondaryAction)
+                        .buttonStyle(.plainHandCursor)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+        }
+        .padding(20)
+        .background(Theme.panelStrong)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Theme.border, lineWidth: 1)
+        )
     }
 
     // MARK: - Collection Step
@@ -127,7 +362,7 @@ struct CalibrationWizard: View {
 
             WaveformView(
                 values: motionMonitor.waveform,
-                threshold: (computedSettings?.threshold ?? 0.14) * settingsStore.settings.waveformGain
+                threshold: (computedSettings?.threshold ?? 0.03) * settingsStore.settings.waveformGain
             )
             .frame(height: 100)
             .padding(14)
@@ -140,7 +375,7 @@ struct CalibrationWizard: View {
             Spacer()
         }
         .onReceive(motionMonitor.$latestEvent.compactMap { $0 }) { event in
-            if step == 4 {
+            if isTestStep {
                 lastRecognizedPattern = event.pattern.title
             }
         }
@@ -160,20 +395,30 @@ struct CalibrationWizard: View {
 
     private var footerButtons: some View {
         HStack {
-            if step == 4 {
+            if mode == .onboarding, step == 1 {
+                EmptyView()
+            } else if isTestStep {
                 Button("Start Over") { resetCalibration() }
+            } else if mode == .onboarding, step == 2 {
+                Button("Back") { goBack() }
             } else {
-                Button("Skip") { advanceStep() }
+                Button(currentCalibrationStep == nil ? "Back" : "Skip") {
+                    if currentCalibrationStep == nil {
+                        goBack()
+                    } else {
+                        advanceStep()
+                    }
+                }
             }
             Spacer()
-            if step == 4 {
+            if isTestStep {
                 Button("Close") { dismiss() }
-                Button("Save") { saveAndDismiss() }
+                Button(mode == .onboarding ? "Finish" : "Save") { saveAndDismiss() }
                     .keyboardShortcut(.defaultAction)
             } else {
-                Button("Next") { advanceStep() }
+                Button(nextButtonTitle) { advanceStep() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(currentKnockCount < 3)
+                    .disabled(isNextDisabled)
             }
         }
         .padding(24)
@@ -182,7 +427,7 @@ struct CalibrationWizard: View {
     // MARK: - Logic
 
     private var currentKnockCount: Int {
-        switch step {
+        switch currentCalibrationStep {
         case 1: collector.singleKnocks.count
         case 2: collector.doubleKnocks.count
         case 3: collector.tripleKnocks.count
@@ -190,11 +435,53 @@ struct CalibrationWizard: View {
         }
     }
 
+    private var nextButtonTitle: String {
+        switch mode {
+        case .onboarding where step == 1:
+            return "Continue"
+        case .onboarding where step == 2:
+            return recommendedPermissionsGranted ? "Continue to Calibration" : "Continue Anyway"
+        default:
+            return "Next"
+        }
+    }
+
+    private var isNextDisabled: Bool {
+        if currentCalibrationStep != nil {
+            return currentKnockCount < 3
+        }
+        return false
+    }
+
+    private var recommendedPermissionsGranted: Bool {
+        accessibilityGranted && automationStatus == .granted
+    }
+
+    private var accessibilityStatusTitle: String {
+        accessibilityGranted ? "Allowed" : "Required"
+    }
+
+    private var automationStatusTitle: String {
+        switch automationStatus {
+        case .granted:
+            return "Allowed"
+        case .notDetermined:
+            return "Not Yet Allowed"
+        case .denied:
+            return "Denied"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+
     private func beginCalibration() {
         engine.suppressActions = true
         settingsBeforeCalibration = settingsStore.settings
-        motionMonitor.overrideThreshold = 0.03
-        collector.startObserving(motionMonitor: motionMonitor, step: step)
+        if let calibrationStep = currentCalibrationStep {
+            startCollection(for: calibrationStep)
+        } else {
+            motionMonitor.overrideThreshold = nil
+        }
     }
 
     private func endCalibration() {
@@ -214,19 +501,42 @@ struct CalibrationWizard: View {
     private func advanceStep() {
         collector.stopObserving()
         step += 1
-        if step == 4 {
-            let computed = collector.computeSettings()
-            computedSettings = computed
-            // Apply computed settings temporarily for testing
-            settingsStore.update { settings in
-                settings.detectionThreshold = computed.threshold
-                settings.groupingWindow = computed.groupingWindow
-                settings.cooldown = computed.cooldown
-            }
-            motionMonitor.overrideThreshold = nil
-        } else {
-            collector.startObserving(motionMonitor: motionMonitor, step: step)
+        if isTestStep {
+            enterTestStep()
+        } else if let calibrationStep = currentCalibrationStep {
+            startCollection(for: calibrationStep)
         }
+    }
+
+    private func goBack() {
+        collector.stopObserving()
+        guard step > 1 else { return }
+        step -= 1
+        computedSettings = nil
+        lastRecognizedPattern = "None"
+
+        if let calibrationStep = currentCalibrationStep {
+            startCollection(for: calibrationStep)
+        } else {
+            motionMonitor.overrideThreshold = nil
+        }
+    }
+
+    private func startCollection(for calibrationStep: Int) {
+        motionMonitor.overrideThreshold = 0.03
+        collector.startObserving(motionMonitor: motionMonitor, step: calibrationStep)
+    }
+
+    private func enterTestStep() {
+        let computed = collector.computeSettings()
+        computedSettings = computed
+        lastRecognizedPattern = "None"
+        settingsStore.update { settings in
+            settings.detectionThreshold = computed.threshold
+            settings.groupingWindow = computed.groupingWindow
+            settings.cooldown = computed.cooldown
+        }
+        motionMonitor.overrideThreshold = nil
     }
 
     private func resetCalibration() {
@@ -234,9 +544,10 @@ struct CalibrationWizard: View {
         collector = CalibrationCollector()
         computedSettings = nil
         lastRecognizedPattern = "None"
-        step = 1
-        motionMonitor.overrideThreshold = 0.03
-        collector.startObserving(motionMonitor: motionMonitor, step: step)
+        step = mode == .onboarding ? 3 : 1
+        if let calibrationStep = currentCalibrationStep {
+            startCollection(for: calibrationStep)
+        }
     }
 
     private func saveAndDismiss() {
@@ -252,6 +563,30 @@ struct CalibrationWizard: View {
         motionMonitor.overrideThreshold = nil
         collector.stopObserving()
         dismiss()
+    }
+
+    private func refreshPermissionStatuses() {
+        accessibilityGranted = AccessibilityPermission.isTrusted(promptIfNeeded: false)
+        Task {
+            automationStatus = await AutomationPermission.currentStatus()
+        }
+    }
+
+    private func requestAccessibilityPermission() {
+        isRequestingAccessibility = true
+        _ = AccessibilityPermission.requestIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            accessibilityGranted = AccessibilityPermission.isTrusted(promptIfNeeded: false)
+            isRequestingAccessibility = false
+        }
+    }
+
+    private func requestAutomationPermission() {
+        isRequestingAutomation = true
+        Task {
+            automationStatus = await AutomationPermission.requestIfNeeded()
+            isRequestingAutomation = false
+        }
     }
 }
 
@@ -362,7 +697,7 @@ private final class CalibrationCollector: Observable {
 
         // Clamp to valid ranges
         return ComputedCalibration(
-            threshold: max(0.03, min(threshold, 0.60)),
+            threshold: max(0.01, min(threshold, 0.10)),
             groupingWindow: max(0.20, min(groupingWindow, 0.70)),
             cooldown: max(0.05, min(cooldown, 0.30))
         )

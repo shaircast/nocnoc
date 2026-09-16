@@ -13,7 +13,7 @@ struct KnockApp: App {
                 .environmentObject(appModel.settingsStore)
                 .environmentObject(appModel.motionMonitor)
                 .environmentObject(appModel.engine)
-                .environmentObject(appModel.updateChecker)
+                .environmentObject(appModel.updater)
                 .background(
                     WindowObserver { window in
                         appModel.mainWindow = window
@@ -30,7 +30,7 @@ struct KnockApp: App {
                 .environmentObject(appModel.settingsStore)
                 .environmentObject(appModel.motionMonitor)
                 .environmentObject(appModel.engine)
-                .environmentObject(appModel.updateChecker)
+                .environmentObject(appModel.updater)
                 .frame(width: 320)
         }
         .menuBarExtraStyle(.window)
@@ -51,7 +51,7 @@ final class AppModel: ObservableObject {
     let settingsStore: SettingsStore
     let motionMonitor: MotionMonitor
     let engine: KnockEngine
-    let updateChecker: UpdateChecker
+    let updater: AppUpdater
     @Published private(set) var isMonitoring = false
     @Published private(set) var isSupported = true
     @Published private(set) var recentPattern: KnockPattern?
@@ -84,9 +84,7 @@ final class AppModel: ObservableObject {
         self.settingsStore = settingsStore
         self.motionMonitor = MotionMonitor(settingsStore: settingsStore)
         self.engine = KnockEngine(settingsStore: settingsStore, motionMonitor: motionMonitor)
-        self.updateChecker = UpdateChecker()
-
-        updateChecker.startPeriodicChecks()
+        self.updater = AppUpdater()
 
         engine.$isMonitoring
             .receive(on: DispatchQueue.main)

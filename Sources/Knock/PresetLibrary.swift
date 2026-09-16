@@ -2,6 +2,64 @@ import Foundation
 
 // MARK: - Preset Data Model
 
+struct HotkeyModifiers: OptionSet, Codable, Equatable {
+    let rawValue: Int
+
+    static let command = HotkeyModifiers(rawValue: 1 << 0)
+    static let shift = HotkeyModifiers(rawValue: 1 << 1)
+    static let option = HotkeyModifiers(rawValue: 1 << 2)
+    static let control = HotkeyModifiers(rawValue: 1 << 3)
+
+    private static let orderedOptions: [(flag: HotkeyModifiers, symbol: String, appleScript: String)] = [
+        (.command, "⌘", "command down"),
+        (.shift, "⇧", "shift down"),
+        (.option, "⌥", "option down"),
+        (.control, "⌃", "control down"),
+    ]
+
+    var displayPrefix: String {
+        Self.orderedOptions
+            .filter { contains($0.flag) }
+            .map(\.symbol)
+            .joined()
+    }
+
+    var appleScriptClause: String {
+        Self.orderedOptions
+            .filter { contains($0.flag) }
+            .map(\.appleScript)
+            .joined(separator: ", ")
+    }
+}
+
+struct HotkeyConfiguration: Codable, Equatable {
+    var keyCode: Int?
+    var keyDisplay: String
+    var modifiers: HotkeyModifiers
+
+    init(keyCode: Int? = nil, keyDisplay: String = "", modifiers: HotkeyModifiers = []) {
+        self.keyCode = keyCode
+        self.keyDisplay = keyDisplay
+        self.modifiers = modifiers
+    }
+
+    var isValid: Bool {
+        keyCode != nil && !keyDisplay.isEmpty
+    }
+
+    var summary: String {
+        guard isValid else { return "" }
+        return modifiers.displayPrefix + keyDisplay
+    }
+
+    var appleScript: String? {
+        guard let keyCode else { return nil }
+        let base = "tell application \"System Events\" to key code \(keyCode)"
+        let modifiersClause = modifiers.appleScriptClause
+        return modifiersClause.isEmpty ? base : "\(base) using {\(modifiersClause)}"
+    }
+}
+
 enum PresetCategory: String, CaseIterable, Identifiable {
     case system
     case app
@@ -26,6 +84,7 @@ struct ParameterSpec: Equatable {
 enum CommandTemplate: Equatable {
     case fixed(executable: String, arguments: [String])
     case parameterized(executable: String, argumentTemplate: [String], parameter: ParameterSpec)
+    case hotkey
     case none
 }
 
@@ -35,11 +94,46 @@ struct ActionPreset: Identifiable, Equatable {
     let icon: String
     let category: PresetCategory
     let template: CommandTemplate
+    let requiresAccessibility: Bool
+
+    init(
+        id: String,
+        name: String,
+        icon: String,
+        category: PresetCategory,
+        template: CommandTemplate,
+        requiresAccessibility: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.category = category
+        self.template = template
+        self.requiresAccessibility = requiresAccessibility
+    }
 }
 
 struct SlotConfiguration: Codable, Equatable {
     var presetId: String
     var parameterValue: String
+    var hotkey: HotkeyConfiguration?
+
+    init(
+        presetId: String,
+        parameterValue: String = "",
+        hotkey: HotkeyConfiguration? = nil
+    ) {
+        self.presetId = presetId
+        self.parameterValue = parameterValue
+        self.hotkey = hotkey
+    }
+
+    var detailSummary: String? {
+        if let hotkey, hotkey.isValid {
+            return hotkey.summary
+        }
+        return parameterValue.isEmpty ? nil : parameterValue
+    }
 
     static let empty = SlotConfiguration(presetId: "none", parameterValue: "")
 }
@@ -68,9 +162,20 @@ enum PresetLibrary {
             let arguments = argumentTemplate.map { $0.replacingOccurrences(of: "{parameter}", with: slot.parameterValue) }
             let summary = slot.parameterValue.isEmpty ? preset.name : "\(preset.name): \(slot.parameterValue)"
             return (executable, arguments, summary)
+        case .hotkey:
+            guard let hotkey = slot.hotkey, let appleScript = hotkey.appleScript else { return nil }
+            return (
+                executable: "/usr/bin/osascript",
+                arguments: ["-e", appleScript],
+                summary: "\(preset.name): \(hotkey.summary)"
+            )
         case .none:
             return nil
         }
+    }
+
+    static func requiresAccessibility(for slot: SlotConfiguration) -> Bool {
+        preset(for: slot.presetId)?.requiresAccessibility ?? false
     }
 
     // MARK: - System Controls
@@ -90,7 +195,8 @@ enum PresetLibrary {
             template: .fixed(
                 executable: "/usr/bin/osascript",
                 arguments: ["-e", "tell application \"System Events\" to key code 12 using {command down, control down}"]
-            )
+            ),
+            requiresAccessibility: true
         ),
         ActionPreset(
             id: "brightness-up", name: "Brightness Up", icon: "sun.max",
@@ -98,7 +204,8 @@ enum PresetLibrary {
             template: .fixed(
                 executable: "/usr/bin/osascript",
                 arguments: ["-e", "tell application \"System Events\" to key code 144"]
-            )
+            ),
+            requiresAccessibility: true
         ),
         ActionPreset(
             id: "brightness-down", name: "Brightness Down", icon: "sun.min",
@@ -106,7 +213,8 @@ enum PresetLibrary {
             template: .fixed(
                 executable: "/usr/bin/osascript",
                 arguments: ["-e", "tell application \"System Events\" to key code 145"]
-            )
+            ),
+            requiresAccessibility: true
         ),
         ActionPreset(
             id: "volume-up", name: "Volume Up", icon: "speaker.plus",
@@ -152,6 +260,12 @@ enum PresetLibrary {
     // MARK: - Advanced
 
     private static let advanced: [ActionPreset] = [
+        ActionPreset(
+            id: "send-hotkey", name: "Keyboard Shortcut", icon: "command",
+            category: .advanced,
+            template: .hotkey,
+            requiresAccessibility: true
+        ),
         ActionPreset(
             id: "shell-command", name: "Terminal Command", icon: "terminal",
             category: .advanced,

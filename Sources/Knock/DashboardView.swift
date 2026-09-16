@@ -2,13 +2,19 @@ import ServiceManagement
 import SwiftUI
 
 struct DashboardView: View {
+    private enum SetupFlow {
+        case onboarding
+        case recalibration
+    }
+
     @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var motionMonitor: MotionMonitor
     @EnvironmentObject private var engine: KnockEngine
-    @EnvironmentObject private var updateChecker: UpdateChecker
+    @EnvironmentObject private var updater: AppUpdater
 
     @State private var selectedPattern: KnockPattern?
     @State private var showingCalibration = false
+    @State private var setupFlow: SetupFlow = .recalibration
     @State private var showingAdvanced = false
     @State private var launchAtLogin = false
 
@@ -30,19 +36,24 @@ struct DashboardView: View {
         )
         .foregroundStyle(Theme.primaryText)
         .sheet(item: $selectedPattern) { pattern in
-            PresetPickerView(pattern: pattern) { slot in
+            PresetPickerView(
+                pattern: pattern,
+                initialSlot: settingsStore.settings.slot(for: pattern)
+            ) { slot in
                 settingsStore.update { settings in
                     settings.setSlot(slot, for: pattern)
                 }
             }
         }
         .sheet(isPresented: $showingCalibration) {
-            CalibrationWizard()
+            CalibrationWizard(mode: setupFlow == .onboarding ? .onboarding : .calibrationOnly)
                 .environmentObject(settingsStore)
                 .environmentObject(motionMonitor)
+                .environmentObject(engine)
         }
         .onAppear {
             if !settingsStore.settings.hasCompletedCalibration {
+                setupFlow = .onboarding
                 showingCalibration = true
             }
         }
@@ -105,6 +116,7 @@ struct DashboardView: View {
     private var calibrationSection: some View {
         HStack(spacing: 12) {
             NeonButton(title: "Recalibrate", icon: "arrow.counterclockwise") {
+                setupFlow = .recalibration
                 showingCalibration = true
             }
 
@@ -147,7 +159,7 @@ struct DashboardView: View {
             SliderRow(
                 title: "Detection threshold",
                 value: binding(\.detectionThreshold),
-                range: 0.03...0.60,
+                range: 0.01...0.10,
                 step: 0.01,
                 format: .number.precision(.fractionLength(2))
             )
@@ -186,14 +198,19 @@ struct DashboardView: View {
                     launchAtLogin = SMAppService.mainApp.status == .enabled
                 }
 
-            updateStatusView
+            Toggle("Automatically Check for Updates", isOn: Binding(
+                get: { updater.automaticallyChecksForUpdates },
+                set: { updater.setAutomaticallyChecksForUpdates($0) }
+            ))
+            .disabled(!updater.isAvailable)
 
-            Button("Check for Updates") {
-                Task { await updateChecker.checkNow() }
+            Button(action: updater.checkForUpdates) {
+                Text(updater.availableVersion.map { "Update available: v\($0)" } ?? "Check for Updates…")
             }
             .font(.caption)
             .foregroundStyle(Theme.accent)
-            .disabled(updateChecker.status == .checking)
+            .disabled(!updater.canCheckForUpdates)
+            .help(updater.isAvailable ? "Check for a new version of nocnoc" : "Install the packaged app to enable updates")
 
             Button("Reset Defaults") {
                 settingsStore.reset()
@@ -204,65 +221,6 @@ struct DashboardView: View {
         .padding(20)
         .frame(width: 320)
         .background(Theme.panelStrong)
-    }
-
-    @ViewBuilder
-    private var updateStatusView: some View {
-        switch updateChecker.status {
-        case .idle:
-            EmptyView()
-        case .checking:
-            updateStatusBadge(
-                title: "Checking for updates...",
-                systemImage: "arrow.triangle.2.circlepath",
-                foreground: Theme.secondaryText,
-                background: Theme.border.opacity(0.45)
-            )
-        case .upToDate:
-            updateStatusBadge(
-                title: "You're up to date",
-                systemImage: "checkmark.circle.fill",
-                foreground: Theme.accent,
-                background: Theme.accentSoft
-            )
-        case .failed:
-            updateStatusBadge(
-                title: "Update check failed",
-                systemImage: "exclamationmark.triangle.fill",
-                foreground: Theme.warning,
-                background: Theme.warningSoft
-            )
-        case .available(let version, let url):
-            Button {
-                NSWorkspace.shared.open(url)
-            } label: {
-                Label("v\(version) available", systemImage: "arrow.down.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.info)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-                    .background(Theme.infoSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plainHandCursor)
-        }
-    }
-
-    private func updateStatusBadge(
-        title: String,
-        systemImage: String,
-        foreground: Color,
-        background: Color
-    ) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
@@ -323,8 +281,8 @@ private struct ActionSlotCard: View {
                         .font(.title2)
                     Text(preset.name)
                         .font(.headline)
-                    if !slot.parameterValue.isEmpty {
-                        Text(slot.parameterValue)
+                    if let detailSummary = slot.detailSummary {
+                        Text(detailSummary)
                             .font(.caption)
                             .foregroundStyle(Theme.secondaryText)
                             .lineLimit(1)

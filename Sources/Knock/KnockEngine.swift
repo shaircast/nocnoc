@@ -63,6 +63,11 @@ final class KnockEngine: ObservableObject {
             return
         }
 
+        if PresetLibrary.requiresAccessibility(for: slot), !AccessibilityPermission.requestIfNeeded() {
+            lastActionSummary = "\(event.pattern.title): allow Accessibility for nocnoc, then try again"
+            return
+        }
+
         runner.run(executable: resolved.executable, arguments: resolved.arguments) { [weak self] result in
             Task { @MainActor in
                 switch result {
@@ -108,7 +113,10 @@ private enum ActionRunnerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .executionFailed(let status, let stderr):
-            stderr.isEmpty ? "Command exited with status \(status)" : stderr
+            if stderr.contains("not allowed to send keystrokes") {
+                return "Accessibility permission is required for this action"
+            }
+            return stderr.isEmpty ? "Command exited with status \(status)" : stderr
         }
     }
 }
