@@ -202,6 +202,9 @@ struct PresetPickerView: View {
     }
 
     private func select(preset: ActionPreset) {
+        if selectedPreset?.id != preset.id {
+            parameterValue = ""
+        }
         selectedPreset = preset
         switch preset.template {
         case .parameterized:
